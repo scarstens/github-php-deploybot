@@ -1,0 +1,21 @@
+{
+  "name": "sethcarstens/github-php-deploybot",
+  "type": "library",
+  "description": "PHP class that you can pull in as a library and configure to help with automated deployments via Github tagging and releases",
+  "keywords": ["php","library","deploy","bot","continuous-integration"],
+  "homepage": "https://github.com/scarstens/github-php-deploybot",
+  "license": "GPL-v2",
+  "authors": [
+    {
+      "name": "Seth Carstens",
+      "email": "seth.carstens@gmail.com",
+      "homepage": "http://github.com/scarstens",
+      "role": "Developer"
+    }
+  ],
+  "autoload": {
+    "classmap": {
+      "classmap": ["src/github-php-deploybot.php"]
+    }
+  }
+}
