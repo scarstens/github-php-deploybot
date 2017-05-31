@@ -11,5 +11,5 @@ $config_file = __DIR__ . 'config.php';
 
 // currently script assumes that anything you echo is logged into a file
 echo( ':::Github Release Event Hooked on ' . date( "Y-m-d H:i:s" ) . ':::' . PHP_EOL );
-$deploy_bot = new Github_Deployment( json_decode( fgets( STDIN ) ), $debug_level, $config_file );
+$deploy_bot = new Github_Php_Deploybot\Deployment( json_decode( fgets( STDIN ) ), $debug_level, $config_file );
 $deploy_bot->deploy_repo();
