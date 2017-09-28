@@ -3,8 +3,8 @@
 $debug_level = 2;
 
 // You can manually include the class library file or use composer autoloader
-//include_once __DIR__ . 'vendor/sethcarstens/github-php-deploybot/src/github-php-deploybot.php';
-include_once __DIR__ . 'vendor/autoload.php';
+//include_once __DIR__ . '/vendor/sethcarstens/github-php-deploybot/src/github-php-deploybot.php';
+include_once __DIR__ . '/vendor/autoload.php';
 
 // This assumes you place the config file in your root directory, but easily changed as needed
 $config_file = __DIR__ . 'config.php';

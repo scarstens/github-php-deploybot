@@ -4,16 +4,74 @@
  *
  * @author  Seth Carstens
  * @package github-php-deploybot
- * @version 0.0.2
+ * @version 0.1.1
  * @license GPL 2.0 - please retain comments that express original build of this file by the author.
  */
 
 namespace Github_Php_Deploybot;
 
+use stdClass;
+
 /**
  * Class Deployment
  */
 class Deployment {
+
+	/**
+	 * @var string
+	 */
+	public $action;
+
+	/**
+	 * @var array
+	 */
+	public $allowed_deployments = [];
+
+	/**
+	 * @var array
+	 * See: /config-example.php
+	 */
+	public $config;
+
+	/**
+	 * @var array
+	 */
+	public $config_file;
+
+	/**
+	 * @var int
+	 */
+	public $debug_level;
+
+	/**
+	 * @var string
+	 */
+	public $dir;
+
+	/**
+	 * @var mixed
+	 */
+	public $deploy_pkg;
+
+	/**
+	 * @var stdClass
+	 */
+	public $notify_data;
+
+	/**
+	 * @var mixed
+	 */
+	public $payload;
+
+	/**
+	 * @var string
+	 */
+	public $release_notes;
+
+	/**
+	 * @var string
+	 */
+	public $release_title;
 
 	/**
 	 * Repo is the representation of the git repository from github that is being deployed.
@@ -23,14 +81,8 @@ class Deployment {
 
 	/**
 	 * @var array
-	 * See: /config-example.php
 	 */
-	public $config;
-
-	/**
-	 * @var string
-	 */
-	public $release_title;
+	public $security_file;
 
 	/**
 	 * @var string
@@ -43,61 +95,25 @@ class Deployment {
 	public $type;
 
 	/**
-	 * @var string
-	 */
-	public $action;
-
-	/**
-	 * @var mixed
-	 */
-	public $deploy_pkg;
-
-	/**
-	 * @var string
-	 */
-	public $release_notes;
-
-	/**
-	 * @var array
-	 */
-	public $allowed_deployments = [];
-
-	/**
-	 * @var mixed
-	 */
-	public $payload;
-
-	/**
-	 * @var int
-	 */
-	public $debug_level;
-
-	/**
-	 * @var array
-	 */
-	public $config_file;
-
-	/**
 	 * Constructor only sets up the deployment object and calculates its params.
 	 *
-	 * @param      $payload
-	 * @param int  $debug_level
-	 * @param null $config_file
+	 * @param           $payload
+	 * @param int       $debug_level
+	 * @param           $dir
+	 * @param bool|null $config_file
+	 * @param bool      $security_file
 	 */
-	public function __construct( $payload, $debug_level = 1, $config_file = null ) {
+	public function __construct( $payload, $debug_level = 1, $dir, $config_file = false, $security_file = false ) {
 		$this->debug_level = $debug_level;
 		// Exit early if payload isn't valid
 		if ( ! isset( $payload ) || ! is_object( $payload ) ) {
 			$this->cli_out( 'Payload is invalid, discarding hook action.' );
 			$this->exit_deployment( 0 );
 		}
-
-		if ( ! isset( $config_file ) ) {
-			$this->config_file = __DIR__ . '/deploy/config.php';
-		}
-
+		$this->dir         = $dir;
+		$this->config_file = $config_file;
 		// Setup current object properties
-		$this->set_config_from_file( $this->config_file );
+		$this->set_config_from_files( $this->dir, $this->config_file );
 		$this->set_deploy_type( $payload );
 		$this->allowed_deployments = $this->config['allowed_deployments'];
 
@@ -107,7 +123,6 @@ class Deployment {
 				$this->action = $payload->action;
 				// $this->
 				$this->repo = $payload->repository->full_name;
-				// TODO: maybe switch to using http://php.net/manual/en/function.escapeshellcmd.php
 				$this->release_title = static::cli_safe_string( $payload->release->name );
 				$this->tag           = static::cli_safe_string( $payload->release->tag_name );
 				$this->release_notes = static::cli_safe_string( $payload->release->body );
@@ -134,15 +149,31 @@ class Deployment {
 	/**
 	 * Used to pull in the configuration settings
 	 *
-	 * @param string $config_file
+	 * @param string      $dir
+	 * @param bool|string $config_file
+	 * @param bool|string $security_file
 	 */
-	public function set_config_from_file( $config_file = '' ) {
+	public function set_config_from_files( $dir, $config_file = false, $security_file = false ) {
+		// Setup config file or default
+		if ( ! $config_file ) {
+			$config_file = $dir . '/deploy/config.php';
+		}
+		// Setup security file or default
+		if ( ! $security_file ) {
+			$security_file = $dir . '/deploy/config-security.php';
+		}
+
 		// Exit early if config file is not defined or does not exist
 		if ( ! file_exists( $config_file ) ) {
 			$this->cli_out( 'Required config file location is not defined, exiting.' );
 			$this->exit_deployment( 1 );
+		} elseif ( ! file_exists( $security_file ) ) {
+			$this->cli_out( 'Required security file location is not defined, exiting.' );
+			$this->exit_deployment( 1 );
 		} else {
 			$this->config = require_once( $config_file );
+			$security     = require_once( $security_file );
+			$this->config = array_merge( $this->config, $security );
 		}
 	}
 
@@ -162,33 +193,66 @@ class Deployment {
 		}
 	}
 
+	public static function configure_deployment( $deploy_pkg, $config ) {
+		$configured_deploy_pkg = $deploy_pkg->config;
+		// Pull config parameters in as defaults
+		foreach ( $config as $key => $config_value ) {
+			$deploy_pkg->$key = $config_value;
+		}
+		unset( $deploy_pkg->allowed_deployments );
+		unset( $deploy_pkg->config );
+		// Backwards compatible with string value in config
+		if ( ! is_array( $configured_deploy_pkg ) && is_string( $configured_deploy_pkg ) ) {
+			$deploy_pkg->type = $configured_deploy_pkg;
+		} elseif ( is_array( $configured_deploy_pkg ) ) {
+			echo 'Dynamic repo config detected...' . PHP_EOL;
+			// Override any config params with repo specific params
+			foreach ( $configured_deploy_pkg as $key => $override ) {
+				$deploy_pkg->$key = $override;
+			}
+		} else {
+			print_r( 'Deployment config not configured properly. L' . __LINE__ );
+			exit;
+		}
+
+		return $deploy_pkg;
+	}
+
 	/**
 	 * Executes the actual deployment automation
 	 */
 	public function deploy_repo() {
 		// Confirm current repo is valid
-		// TODO: maybe checking allowed twice?
 		if ( isset( $this->allowed_deployments[ $this->repo ] ) ) {
-			//TODO: maybe chance to product_type
-			$this->deploy_pkg->type = $this->allowed_deployments[ $this->repo ];
+			$this->deploy_pkg->config = $this->allowed_deployments[ $this->repo ];
 		} else {
 			$this->cli_out( 'Group/Repo not in allowed deployments, exiting.' );
 			$this->exit_deployment( 1 );
 		}
+
+		$this->deploy_pkg = $this::configure_deployment( $this->deploy_pkg, $this->config );
 
 		if ( ! isset( $this->config['gh_access_token'] ) ) {
 			$this->cli_out( 'Gitub Access Token missing from config file, exiting.' );
 			$this->exit_deployment( 1 );
 		}
 
-		$access_token       = $this->config['gh_access_token'];
-		$deploy_pkg         = $this->deploy_pkg;
-		$temp_folder        = $this->config['temp_file_dir'];
-		$temp_file          = $temp_folder . $deploy_pkg->name . '.zip';
-		$deploy_to          = $this->config['deploy_wp_content_dir'] . $this->deploy_pkg->type . 's';
+		// Setup deployment parameters.
+		$access_token = $this->deploy_pkg->gh_access_token;
+		$deploy_pkg   = $this->deploy_pkg;
+		$temp_folder  = $this->deploy_pkg->temp_file_dir;
+		$temp_file    = $temp_folder . $deploy_pkg->name . '.zip';
+
+		if ( is_array( $this->deploy_pkg->deploy_wp_content_dir ) ) {
+			$deploy_to = current( $this->deploy_pkg->deploy_wp_content_dir ) . $this->deploy_pkg->type . 's';
+		} else {
+			$deploy_to = $this->deploy_pkg->deploy_wp_content_dir . $this->deploy_pkg->type . 's';
+		}
+
 		$zip_folder_search  = str_ireplace( '/', '-', $this->repo ) . '*';
 		$zip_folder_desired = $temp_folder . $deploy_pkg->name;
-		// TODO: build out config array to merge a set of defaults for above
+
+		// Execute deployment commands.
 		$code = $this->cli_cmd( 'mkdir -p ' . $this->config['temp_file_dir'] );
 		$this->cli_out( "curl -H \"Authorization: token HIDDEN\" -L $deploy_pkg->zip > $temp_file" );
 		passthru( "curl -s -H \"Authorization: token $access_token\" -L $deploy_pkg->zip > $temp_file", $code );
@@ -196,6 +260,7 @@ class Deployment {
 		$this->cli_cmd( "find $temp_folder -maxdepth 1 -type d -name $zip_folder_search -exec mv {} $zip_folder_desired \\;" );
 		$this->cli_cmd( "find $temp_folder -type d -name \* -exec chmod 775 {} \;" );
 		// TODO: mkdir -pre-ver
+		$this->cli_cmd( 'mkdir -p ' . $deploy_to . "-prev-ver/$deploy_pkg->name/ " );
 		// first backup the original plugin (old version)
 		$this->cli_cmd( 'rm -rf ' . $deploy_to . "-prev-ver/$deploy_pkg->name/ " );
 		$this->cli_cmd( 'mv ' . $deploy_to . "/$deploy_pkg->name/ " . $deploy_to . "-prev-ver/$deploy_pkg->name/ " );
@@ -219,7 +284,13 @@ class Deployment {
 		$this->cli_out( 'Sending Deployment to New Relic' );
 		$this->new_relic_notification();
 		$this->cli_out( 'Sending Release notes to Slack for ' . $this->release_title );
-		$this->slack_notification();
+		if ( is_string( $this->deploy_pkg->slack_channels ) ) {
+			$this->slack_notification( $this->deploy_pkg->slack_channels );
+		} elseif ( is_array( $this->deploy_pkg->slack_channels ) ) {
+			foreach ( $this->deploy_pkg->slack_channels as $channel ) {
+				$this->slack_notification( $channel );
+			}
+		}
 	}
 
 	/**
@@ -237,9 +308,10 @@ class Deployment {
 
 		];
 		// Setup curl cli command data
-		$payload  = print_r( json_encode( $data ), true );
-		$endpoint = $this->config['new_relic_webhook'];
-		$api_key  = $this->config['new_relic_api_key'];
+		$payload = print_r( json_encode( $data ), true );
+//		$endpoint = $this->config['new_relic_webhook'];
+		$endpoint = 'https://api.newrelic.com/v2/applications/' . $this->deploy_pkg->new_relic_application_id . '/deployments.json';
+		$api_key  = $this->deploy_pkg->new_relic_api_key;
 		// Send notification to slack
 		sleep( 1 );
 		$this->cli_cmd( "curl -s -X POST '$endpoint' -H 'X-Api-Key:$api_key' -i -H 'Content-Type: application/json' -d '$payload' ;", 2 );
@@ -251,12 +323,14 @@ class Deployment {
 	/**
 	 * Sends a slack notification based on the config variables
 	 * TODO: bail out if required data not configured.
+	 *
+	 * @param $channel
 	 */
-	public function slack_notification() {
+	public function slack_notification( $channel ) {
 		$data = [
-			'channel'     => $this->config['slack_channel'],
+			'channel'     => $channel,
 			'username'    => "GiddyUp",
-			'icon_emoji'  => $this->config['slack_deploy_icon_emoji'],
+			'icon_emoji'  => $this->deploy_pkg->slack_deploy_icon_emoji,
 			'link_names'  => 1,
 			'attachments' => [
 				[
@@ -275,12 +349,12 @@ class Deployment {
 					'footer_icon' => 'https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-03-15/26963954738_9e0d7b2047b49f4121c9_68.png',
 					'ts'          => time(),
 				],
-				[ "text" => 'https://rpm.newrelic.com/accounts/' . $this->config['new_relic_account_id'] . '/applications/' . $this->config['new_relic_application_id'] ],
+				[ "text" => 'https://rpm.newrelic.com/accounts/' . $this->deploy_pkg->new_relic_account_id . '/applications/' . $this->deploy_pkg->new_relic_application_id ],
 			],
 		];
 		// Setup curl cli command data
 		$payload  = print_r( json_encode( $data ), true );
-		$endpoint = $this->config['slack_webhook'];
+		$endpoint = $this->deploy_pkg->slack_webhook;
 		// Send notification to slack
 		sleep( 1 );
 		$this->cli_cmd( "curl -s -X POST -H 'Content-type: application/json' --data '$payload' $endpoint ;", 2 );
@@ -291,6 +365,7 @@ class Deployment {
 
 	/**
 	 * Handle the final steps of any deployment, regardless of how far the deployment bot made it.
+	 *
 	 * @param $code
 	 */
 	public function exit_deployment( $code ) {
@@ -332,6 +407,7 @@ class Deployment {
 
 	/**
 	 * Utility function that standardizes the way CLI commands are passed through PHP
+	 *
 	 * @param     $command
 	 * @param int $debug_level_out
 	 *
@@ -340,7 +416,12 @@ class Deployment {
 	public function cli_cmd( $command, $debug_level_out = 1 ) {
 		$code = 1;
 		$this->cli_out( $command, $debug_level_out );
-		passthru( $command, $code );
+
+		if ( defined( 'TEST_MODE' ) ) {
+			$this->cli_out( 'TEST MODE, skipping command executions.' );
+		} else {
+			passthru( $command, $code );
+		}
 
 		return $code;
 	}
