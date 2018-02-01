@@ -4,7 +4,7 @@
   "description": "PHP class that you can pull in as a library and configure to help with automated deployments via Github tagging and releases",
   "keywords": ["php","library","deploy","bot","continuous-integration"],
   "homepage": "https://github.com/scarstens/github-php-deploybot",
-  "license": "GPL-v2",
+  "license": "GPL-3.0-or-later",
   "authors": [
     {
       "name": "Seth Carstens",
